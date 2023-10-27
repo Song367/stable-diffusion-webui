@@ -202,6 +202,17 @@ class StableDiffusionProcessing:
 
     is_api: bool = field(default=False, init=False)
 
+    rp_enable: bool = False
+    rp_image: str = ''
+    rp_num: str = ''
+    control_enabled: bool = False
+    init_img: str = ""
+    model_checkpoint: str = ""
+    control_model: str = ""
+    control_module: str = ""
+    control_type: int = 0
+    control_weight: float = 1
+
     def __post_init__(self):
         if self.sampler_index is not None:
             print("sampler_index argument for StableDiffusionProcessing does not do anything; use sampler_name", file=sys.stderr)
@@ -533,6 +544,20 @@ class Processed:
         self.all_seeds = all_seeds or p.all_seeds or [self.seed]
         self.all_subseeds = all_subseeds or p.all_subseeds or [self.subseed]
         self.infotexts = infotexts or [info]
+
+        # 换脸
+        self.rp_enable = p.rp_enable
+        self.rp_num = p.rp_num
+        self.rp_image = p.rp_image
+
+        # controlnet
+        self.init_img = p.init_img
+        self.model_checkpoint = p.model_checkpoint
+        self.control_model = p.control_model
+        self.control_module = p.control_module
+        self.control_enabled = p.control_enabled
+        self.control_type = p.control_type
+        self.control_weight = p.control_weight
 
     def js(self):
         obj = {

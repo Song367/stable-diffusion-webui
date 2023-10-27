@@ -358,7 +358,61 @@ class Api:
         args.pop('script_args', None) # will refeed them to the pipeline directly after initializing them
         args.pop('alwayson_scripts', None)
 
+        if txt2imgreq.model_checkpoint != "":
+            args["override_settings"] = {"sd_model_checkpoint": txt2imgreq.model_checkpoint}
+
         script_args = self.init_script_args(txt2imgreq, self.default_script_arg_txt2img, selectable_scripts, selectable_script_idx, script_runner)
+
+        if txt2imgreq.control_enabled and txt2imgreq.control_type != 0:
+            txt2imgreq.steps = 30
+            args["steps"] = 30
+            for sa in range(len(script_args)):
+                ta = str(type(script_args[sa]))
+                if "UiControlNetUnit" in ta:
+                    print("属性")
+
+
+                    imgpo = decode_base64_to_image(txt2imgreq.init_img)
+                    # imae = imgpo.resize((512, 512))
+                    # 将图像转换为NumPy数组
+                    image_array = np.array(imgpo)
+
+                    # 如果您希望确保数组的数据类型是uint8（0-255之间的整数），可以执行以下操作：
+                    image_array = image_array.astype(np.uint8)
+
+                    script_args[sa].control_mode = 'Balanced'
+                    script_args[sa].enabled = True
+                    script_args[sa].image = {'image': image_array, 'mask': np.zeros(shape=(512, 512, 3)).astype('uint8')}
+                    script_args[sa].pixel_perfect = True
+                    script_args[sa].weight = txt2imgreq.control_weight
+
+                    match txt2imgreq.control_type:
+                        case 1:
+                            script_args[sa].model = 'control_v11p_sd15_canny [d14c016b]'
+                            script_args[sa].module = 'canny'
+                        case 2:
+                            script_args[sa].model = 'control_v11f1p_sd15_depth [cfd03158]'
+                            script_args[sa].module = 'depth_midas'
+                        case 3:
+                            script_args[sa].model = 'control_v11p_sd15_openpose [cab727d4]'
+                            script_args[sa].module = 'openpose_full'
+                        case 4:
+                            script_args[sa].model = 'control_v11p_sd15_scribble [d4ba51ff]'
+                            script_args[sa].module = 'scribble_pidinet'
+
+                    script_args[sa].processor_res = -1
+                    script_args[sa].resize_mode = 'Crop and Resize'
+                    break
+
+        # control_mode  'Balanced'
+        # image['image']  ndarray
+        # image['mask']   ndarray
+        # input_mode.name 'SIMPLE'  input_mode.value 'simple'
+        # model 'control_v11p_sd15_openpose [cab727d4]'
+        # module 'openpose_full'
+        # pixel_perfect True
+        # processor_res 512
+        # resize_mode 'Crop and Resize'
 
         send_images = args.pop('send_images', True)
         args.pop('save_images', None)
@@ -384,7 +438,7 @@ class Api:
 
         b64images = list(map(encode_pil_to_base64, processed.images)) if send_images else []
 
-        return models.TextToImageResponse(images=b64images, parameters=vars(txt2imgreq), info=processed.js())
+        return models.TextToImageResponse(images=b64images)
 
     def img2imgapi(self, img2imgreq: models.StableDiffusionImg2ImgProcessingAPI):
         init_images = img2imgreq.init_images
@@ -418,7 +472,27 @@ class Api:
         args.pop('script_args', None)  # will refeed them to the pipeline directly after initializing them
         args.pop('alwayson_scripts', None)
 
+        if img2imgreq.rp_enable:
+            img2imgreq.denoising_strength = 0
+            img2imgreq.steps = 30
+            img = decode_base64_to_image(img2imgreq.init_images[0])
+            print("上传图片分辨率：", img.width, img.height)
+            args['width'] = img.width
+            args['height'] = img.height
+            args["denoising_strength"] = 0
+            args["steps"] = 30
+            args["override_settings"] = {"sd_model_checkpoint": "sd_xl_base_1.0.safetensors"}
         script_args = self.init_script_args(img2imgreq, self.default_script_arg_img2img, selectable_scripts, selectable_script_idx, script_runner)
+
+        if img2imgreq.rp_enable:
+            for k in range(len(script_args)):
+                if not script_args[k] and script_args[k + 1] == False and script_args[k + 2] == '0' and os.path.exists(
+                        script_args[k + 3]) and script_args[k + 4] == "CodeFormer":
+                    script_args[k + 1] = True
+                    script_args[k] = decode_base64_to_image(img2imgreq.rp_image)
+                    script_args[k + 6] = 'R-ESRGAN 4x+'
+                    script_args[k + 2] = img2imgreq.rp_num
+                    break
 
         send_images = args.pop('send_images', True)
         args.pop('save_images', None)
@@ -449,7 +523,7 @@ class Api:
             img2imgreq.init_images = None
             img2imgreq.mask = None
 
-        return models.ImageToImageResponse(images=b64images, parameters=vars(img2imgreq), info=processed.js())
+        return models.ImageToImageResponse(images=b64images, info=processed.js())
 
     def extras_single_image_api(self, req: models.ExtrasSingleImageRequest):
         reqDict = setUpscalers(req)
